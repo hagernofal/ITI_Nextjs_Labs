@@ -1,5 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
+import connectDB from "@/lib/db";
+import Product from "@/models/Product";
 
 export default function ProductDetail({ product }) {
   if (!product) return <div className="container my-5 text-center">Loading...</div>;
@@ -10,13 +12,22 @@ export default function ProductDetail({ product }) {
       
       <div className="row g-5 align-items-center p-4 rounded shadow bg-white">
         <div className="col-md-6">
-          <div className="position-relative" style={{ height: "400px" }}>
-            <Image 
-              src={product.thumbnail} 
-              alt={product.title} 
-              fill 
-              className="object-fit-cover rounded"
-            />
+          <div className="position-relative text-center" style={{ height: "400px" }}>
+            {product.thumbnail?.startsWith('data:image') ? (
+              <img 
+                src={product.thumbnail} 
+                alt={product.title} 
+                className="img-fluid rounded object-fit-cover w-100 h-100"
+              />
+            ) : (
+              <Image 
+                src={product.thumbnail || "https://via.placeholder.com/400"} 
+                alt={product.title} 
+                fill 
+                className="object-fit-cover rounded"
+                priority
+              />
+            )}
           </div>
         </div>
         <div className="col-md-6">
@@ -24,30 +35,45 @@ export default function ProductDetail({ product }) {
           <h1 className="display-6 fw-bold mb-3 text-dark">{product.title}</h1>
           <p className="lead text-muted small">{product.description}</p>
           <div className="h3 text-success fw-bold my-4">${product.price}</div>
-          <div className="text-warning mb-4 fw-bold">Rating: ⭐ {product.rating}</div>
-          <div className="text-secondary small mb-4">Brand: {product.brand} | Stock: {product.stock}</div>
+          <div className="text-warning mb-4 fw-bold">Rating: ⭐ {product.rating || '4.5'}</div>
           <button className="btn btn-primary btn-lg w-100">Add to Cart</button>
         </div>
       </div>
     </div>
   );
 }
-export async function getStaticPaths() {
-  const res = await fetch("https://dummyjson.com/products");
-  const data = await res.json();
 
-  const paths = data.products.map((product) => ({
-    params: { id: product.id.toString() },
+export async function getStaticPaths() {
+  await connectDB();
+  const products = await Product.find({}, '_id').lean();
+
+  const paths = products.map((product) => ({
+    params: { id: product._id.toString() },
   }));
 
-  return { paths, fallback: false };
+  return { 
+    paths, 
+    fallback: 'blocking' 
+  };
 }
 
 export async function getStaticProps({ params }) {
-  const res = await fetch(`https://dummyjson.com/products/${params.id}`);
-  const product = await res.json();
+  await connectDB();
+  
+  try {
+    const productData = await Product.findById(params.id).lean();
 
-  return {
-    props: { product },
-  };
+    if (!productData) {
+      return { notFound: true };
+    }
+
+    return {
+      props: {
+        product: JSON.parse(JSON.stringify(productData)),
+      },
+      revalidate: 10,
+    };
+  } catch (error) {
+    return { notFound: true };
+  }
 }

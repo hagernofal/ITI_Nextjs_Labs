@@ -1,18 +1,31 @@
 import React, { useState, useTransition } from 'react';
+import { useSession, signIn, signOut } from "next-auth/react"; 
+import Link from "next/link";
 import Products from '@/components/Products';
-
+import connectDB from "@/lib/db"; 
+import Product from "@/models/Product"; 
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb', 
+    },
+  },
+};
 const ProductsPage = ({ initialProducts }) => {
+    const { data: session } = useSession(); 
     const [searchTerm, setSearchTerm] = useState("");
     const [category, setCategory] = useState("all");
     const [sortBy, setSortBy] = useState(""); 
     
-    const [filteredProducts, setFilteredProducts] = useState(initialProducts);
+    const allowedProducts = session ? initialProducts : initialProducts.slice(0, 3);
+
+    const [filteredProducts, setFilteredProducts] = useState(allowedProducts);
     const [isPending, startTransition] = useTransition();
 
     const categories = ["all", ...new Set(initialProducts.map(p => p.category))];
 
     const handleFilterAndSort = (search, cat, sort) => {
-        let result = [...initialProducts];
+        let result = [...allowedProducts]; 
 
         if (search) {
             result = result.filter(p => p.title.toLowerCase().includes(search.toLowerCase()));
@@ -29,6 +42,23 @@ const ProductsPage = ({ initialProducts }) => {
 
     return (
         <div className="container my-4">
+            <div className="d-flex justify-content-between align-items-center mb-4 p-3 bg-light rounded shadow-sm">
+                {session ? (
+                    <>
+                        <div>
+                            <span className="fw-bold"> Welcome, {session.user.name || session.user.email}</span>
+                            <Link href="/products/new" className="btn btn-success btn-sm ms-3"> Add Product</Link>
+                        </div>
+                        <button className="btn btn-danger btn-sm" onClick={() => signOut()}>Sign Out</button>
+                    </>
+                ) : (
+                    <>
+                        <span className="text-muted">You see limited products. Sign in to see all & use CRUD.</span>
+                        <button className="btn btn-dark btn-sm" onClick={() => signIn("github")}>Sign In with GitHub</button>
+                    </>
+                )}
+            </div>
+
             <h1 className="mb-4 fw-bold text-secondary">Products List</h1>
             
             <div className="row g-3 mb-4 p-3 bg-light rounded shadow-sm">
@@ -72,12 +102,15 @@ const ProductsPage = ({ initialProducts }) => {
 };
 
 export default ProductsPage;
+
 export async function getStaticProps() {
-    const res = await fetch('https://dummyjson.com/products');
-    const data = await res.json();
+    await connectDB();
+    const productsData = await Product.find({}).sort({ createdAt: -1 }).lean();
+    
     return {
         props: {
-            initialProducts: data.products,
+            initialProducts: JSON.parse(JSON.stringify(productsData)),
         },
+        revalidate: 10,
     };
 }
